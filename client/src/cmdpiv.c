@@ -23,8 +23,7 @@
 #include "cmdtrace.h"
 #include "cliparser.h"
 #include "cmdparser.h"
-#include "commonutil.h"  // MemLeToUintXByte
-#include "emv/emv_tags.h" // emv_tag_dump
+#include "commonutil.h"  // Mem[LB]eToUintXByte
 #include "emv/tlv.h"
 #include "proxmark3.h"
 #include "cmdhf14a.h"
@@ -70,7 +69,7 @@ static const struct piv_container PIV_CONTAINERS[] = {
     {0x0100, PIV_TAG_ID("\x5F\xC1\x0A"), 3, PIV_CONDITIONAL, "X.509 Certificate for Digital Signature (key ref 9C)"},
     {0x0102, PIV_TAG_ID("\x5F\xC1\x0B"), 3, PIV_CONDITIONAL, "X.509 Certificate for Key Management (key ref 9D)"},
     {0x3001, PIV_TAG_ID("\x5F\xC1\x09"), 3, PIV_OPTIONAL,    "Printed Information"},
-    {0x6050,         PIV_TAG_ID("\x7E"), 1, PIV_OPTIONAL,    "Discovery Object"},
+    {0x6050, PIV_TAG_ID(        "\x7E"), 1, PIV_OPTIONAL,    "Discovery Object"},
     {0x6060, PIV_TAG_ID("\x5F\xC1\x0C"), 3, PIV_OPTIONAL,    "Key History Object"},
     {0x1001, PIV_TAG_ID("\x5F\xC1\x0D"), 3, PIV_OPTIONAL,    "Retired X.509 Certificate for Key Management 1 (key ref 82)"},
     {0x1002, PIV_TAG_ID("\x5F\xC1\x0E"), 3, PIV_OPTIONAL,    "Retired X.509 Certificate for Key Management 2 (key ref 83)"},
@@ -93,11 +92,152 @@ static const struct piv_container PIV_CONTAINERS[] = {
     {0x1013, PIV_TAG_ID("\x5F\xC1\x1F"), 3, PIV_OPTIONAL,    "Retired X.509 Certificate for Key Management 19 (key ref 94)"},
     {0x1014, PIV_TAG_ID("\x5F\xC1\x20"), 3, PIV_OPTIONAL,    "Retired X.509 Certificate for Key Management 20 (key ref 95)"},
     {0x1015, PIV_TAG_ID("\x5F\xC1\x21"), 3, PIV_OPTIONAL,    "Cardholder Iris Images"},
-    {0x1016,     PIV_TAG_ID("\x7F\x61"), 2, PIV_OPTIONAL,    "Biometric Information Templates Group Template"},
+    {0x1016, PIV_TAG_ID(    "\x7F\x61"), 2, PIV_OPTIONAL,    "Biometric Information Templates Group Template"},
     {0x1017, PIV_TAG_ID("\x5F\xC1\x22"), 3, PIV_OPTIONAL,    "Secure Messaging Certificate Signer"},
     {0x1018, PIV_TAG_ID("\x5F\xC1\x23"), 3, PIV_OPTIONAL,    "Pairing Code Reference Data Container"},
     PIV_CONTAINER_FINISH,
 };
+
+enum piv_tag_t {
+    PIV_TAG_GENERIC,
+    PIV_TAG_HEXDUMP,
+    PIV_TAG_STRING,
+    PIV_TAG_PRINTSTR,
+    PIV_TAG_NUMERIC,
+    PIV_TAG_YYYYMMDD,
+    PIV_TAG_ENUM,
+    PIV_TAG_TLV,
+    PIV_TAG_GUID,
+    PIV_TAG_CERT,
+};
+
+struct piv_tag {
+    tlv_tag_t tag;
+    const char *name;
+    enum piv_tag_t type;
+    const void *data;
+};
+
+struct piv_tag_enum {
+    unsigned long value;
+    const char *name;
+};
+
+#define PIV_ENUM_FINISH { (~0), NULL }
+
+// From table 6-2 in SP800-78 specification
+static const struct piv_tag_enum PIV_CRYPTO_ALG[] = {
+    {0x00, "3 Key 3DES - ECB"},
+    {0x03, "3 Key 3DES - ECB"}, // Not a typo, 2 identifiers for the same algorithm
+    {0x06, "RSA 1024 bit"},
+    {0x07, "RSA 2048 bit"},
+    {0x08, "AES-128 ECB"},
+    {0x0A, "AES-192 ECB"},
+    {0x0C, "AES-256 ECB"},
+    {0x11, "ECC P-256"},
+    {0x14, "ECC P-384"},
+    {0x27, "Cipher Suite 2"},
+    {0x2E, "Cipher Suite 7"},
+    PIV_ENUM_FINISH,
+};
+
+static const struct piv_tag_enum PIV_CERT_INFO[] = {
+    0x00, "Uncompressed",
+    0x01, "GZIP Compressed",
+    PIV_ENUM_FINISH,
+};
+
+static const struct piv_tag piv_tags[] = {
+    { 0x00,     "Unknown ???",                                                 PIV_TAG_HEXDUMP,  NULL },
+    { 0x01,     "Name",                                                        PIV_TAG_PRINTSTR, NULL },
+    { 0x02,     "Employee Affiliation",                                        PIV_TAG_PRINTSTR, NULL },
+    { 0x04,     "Expiry Date",                                                 PIV_TAG_PRINTSTR, NULL },
+    { 0x05,     "Agency Card Serial Number",                                   PIV_TAG_PRINTSTR, NULL },
+    { 0x06,     "Issuer identification",                                       PIV_TAG_PRINTSTR, NULL },
+    { 0x07,     "Organization Affiliation (Line 1)",                           PIV_TAG_PRINTSTR, NULL },
+    { 0x08,     "Organization Affiliation (Line 2)",                           PIV_TAG_PRINTSTR, NULL },
+
+    { 0x30,     "FASC-N",                                                      PIV_TAG_STRING,   NULL },
+    { 0x32,     "Organizational Identifier [deprecated]",                      PIV_TAG_HEXDUMP,  NULL },
+    { 0x33,     "DUNS [deprecated]",                                           PIV_TAG_HEXDUMP,  NULL },
+    { 0x34,     "GUID",                                                        PIV_TAG_GUID,     NULL },
+    { 0x35,     "Expiry Date",                                                 PIV_TAG_YYYYMMDD, NULL },
+    { 0x36,     "Cardholder UUID",                                             PIV_TAG_GUID,     NULL },
+    { 0x3e,     "Issuer Asymmetric Signature",                                 PIV_TAG_CERT,     NULL },
+
+    { 0x4f,     "Application Identifier (AID)",                                PIV_TAG_STRING,   NULL },
+
+    { 0x50,     "Application Label",                                           PIV_TAG_PRINTSTR, NULL },
+    { 0x53,     "Discretionary data (or template)",                            PIV_TAG_TLV,      NULL },
+    { 0x5f2f,   "PIN Usage Policy",                                            PIV_TAG_HEXDUMP,  NULL },
+    { 0x5f50,   "Issuer URL",                                                  PIV_TAG_PRINTSTR, NULL },
+
+    { 0x61,     "Application Property Template",                               PIV_TAG_GENERIC,  NULL },
+
+    { 0x70,     "Certificate",                                                 PIV_TAG_CERT,     NULL },
+    { 0x71,     "CertInfo",                                                    PIV_TAG_ENUM,     PIV_CERT_INFO },
+    { 0x72,     "MSCUID [deprecated]",                                         PIV_TAG_HEXDUMP,  NULL },
+    { 0x79,     "Coexistent tag allocation authority",                         PIV_TAG_HEXDUMP,  NULL },
+    { 0x7f21,   "Intermediate CVC",                                            PIV_TAG_HEXDUMP,  NULL },
+    { 0x7f60,   "Biometric Information Template",                              PIV_TAG_GENERIC,  NULL },
+
+    { 0x80,     "Cryptographic algorithm identifier",                          PIV_TAG_ENUM,     PIV_CRYPTO_ALG },
+
+    { 0x99,     "Pairing Code",                                                PIV_TAG_PRINTSTR, NULL },
+
+    { 0xac,     "Cryptographic algorithms supported",                          PIV_TAG_GENERIC,  NULL },
+
+    { 0xb4,     "Security Object Buffer (deprecated)",                         PIV_TAG_GENERIC,  NULL },
+    { 0xba,     "Mapping of DG to Container ID",                               PIV_TAG_GENERIC,  NULL },
+    { 0xbb,     "Security Object",                                             PIV_TAG_GENERIC,  NULL },
+    { 0xbc,     "Fingerprint I & II or Image for Visual Verification",         PIV_TAG_GENERIC,  NULL },
+
+    { 0xc1,     "keysWithOnCardCerts",                                         PIV_TAG_NUMERIC,  NULL },
+    { 0xc2,     "keysWithOffCardCerts",                                        PIV_TAG_NUMERIC,  NULL },
+
+    { 0xe3,     "Extended Application CardURL [deprecated]",                   PIV_TAG_GENERIC,  NULL },
+    { 0xee,     "Buffer Length [deprecated]",                                  PIV_TAG_NUMERIC,  NULL },
+
+    { 0xf0,     "Card Identifier",                                             PIV_TAG_STRING,   NULL },
+    { 0xf1,     "Capability Container version number",                         PIV_TAG_NUMERIC,  NULL },
+    { 0xf2,     "Capability Grammar version number",                           PIV_TAG_NUMERIC,  NULL },
+    { 0xf3,     "Application Card URL",                                        PIV_TAG_PRINTSTR, NULL },
+    { 0xf4,     "PKCS#15",                                                     PIV_TAG_NUMERIC,  NULL },
+    { 0xf5,     "Registered Data Model Number",                                PIV_TAG_NUMERIC,  NULL },
+    { 0xf6,     "Access Control Rule Table",                                   PIV_TAG_HEXDUMP,  NULL },
+    { 0xf7,     "Card APDUs",                                                  PIV_TAG_GENERIC,  NULL },
+    { 0xfa,     "Redirection Tag",                                             PIV_TAG_GENERIC,  NULL },
+    { 0xfb,     "Capability Tuples (CT)",                                      PIV_TAG_GENERIC,  NULL },
+    { 0xfc,     "Status Tuples (ST)",                                          PIV_TAG_GENERIC,  NULL },
+    { 0xfd,     "Next CCC",                                                    PIV_TAG_GENERIC,  NULL },
+    { 0xfe,     "Error Detection Code",                                        PIV_TAG_GENERIC,  NULL },
+};
+
+struct guid {
+    uint32_t part1;
+    uint16_t part2;
+    uint16_t part3;
+    uint8_t data[8];
+};
+
+static void parse_guid(const uint8_t *data, struct guid *guid) {
+    if (guid == NULL) {
+        return;
+    }
+    size_t ofs = 0;
+    guid->part1 = MemBeToUint4byte(&data[ofs]);
+    ofs += sizeof(uint32_t);
+    guid->part2 = MemBeToUint2byte(&data[ofs]);
+    ofs += sizeof(uint16_t);
+    guid->part3 = MemBeToUint2byte(&data[ofs]);
+    ofs += sizeof(uint16_t);
+    for (size_t i = 0; i < sizeof(guid->data); i++) {
+        guid->data[i] = data[ofs + i];
+    }
+}
+
+static void piv_print_cb(void *data, const struct tlv *tlv, int level, bool is_leaf);
+static bool piv_tag_dump(const struct tlv *tlv, int level);
 
 static void PrintChannel(Iso7816CommandChannel channel) {
     switch (channel) {
@@ -110,8 +250,175 @@ static void PrintChannel(Iso7816CommandChannel channel) {
     }
 }
 
+static int piv_sort_tag(tlv_tag_t tag) {
+    return (int)(tag >= 0x100 ? tag : tag << 8);
+}
+
+static int piv_tlv_compare(const void *a, const void *b) {
+    const struct tlv *tlv = a;
+    const struct piv_tag *tag = b;
+
+    return piv_sort_tag(tlv->tag) - (piv_sort_tag(tag->tag));
+}
+
+static const struct piv_tag *piv_get_tag(const struct tlv *tlv) {
+    const struct piv_tag *tag = bsearch(tlv, piv_tags, ARRAYLEN(piv_tags),
+                                        sizeof(piv_tags[0]), piv_tlv_compare);
+    return tag != NULL ? tag : &piv_tags[0];
+}
+
+static unsigned long piv_value_numeric(const struct tlv *tlv, unsigned start, unsigned end) {
+    unsigned long ret = 0;
+    int i;
+
+    if (end > tlv->len * 2)
+        return ret;
+    if (start >= end)
+        return ret;
+
+    if (start & 1) {
+        ret += tlv->value[start / 2] & 0xf;
+        i = start + 1;
+    } else
+        i = start;
+
+    for (; i < end - 1; i += 2) {
+        ret *= 10;
+        ret += tlv->value[i / 2] >> 4;
+        ret *= 10;
+        ret += tlv->value[i / 2] & 0xf;
+    }
+
+    if (end & 1) {
+        ret *= 10;
+        ret += tlv->value[end / 2] >> 4;
+    }
+
+    return ret;
+}
+
+static void piv_tag_dump_yyyymmdd(const struct tlv *tlv, const struct piv_tag *tag, int level) {
+    bool is_printable = true;
+    for (size_t i = 0; i < tlv->len; i++) {
+        if ((tlv->value[i] < 0x30) || (tlv->value[i] > 0x39)) {
+            is_printable = false;
+            break;
+        }
+    }
+    if (is_printable) {
+        PrintAndLogEx(NORMAL, " " _YELLOW_("%c%c%c%c.%c%c.%c%c"),
+                      tlv->value[0], tlv->value[1], tlv->value[2], tlv->value[3],
+                      tlv->value[4], tlv->value[5],
+                      tlv->value[6], tlv->value[7]
+                     );
+    } else {
+        PrintAndLogEx(NORMAL, " " _YELLOW_("%04lu.%02lu.%02lu"),
+                      piv_value_numeric(tlv, 0, 4),
+                      piv_value_numeric(tlv, 4, 6),
+                      piv_value_numeric(tlv, 6, 8)
+                     );
+    }
+}
+
+static void piv_tag_dump_enum(const struct tlv *tlv, const struct piv_tag *tag, int level) {
+    const struct piv_tag_enum *values = tag->data;
+    for (size_t i = 0; values[i].name != NULL; i++) {
+        if (values[i].value == tlv->value[0]) {
+            PrintAndLogEx(NORMAL, " %u - '" _YELLOW_("%s")"'",
+                          tlv->value[0], values[i].name);
+            return;
+        }
+    }
+    PrintAndLogEx(NORMAL, " %u - " _RED_("Unknown??"), tlv->value[0]);
+}
+
+static void piv_tag_dump_tlv(const struct tlv *tlv, const struct piv_tag *tag, int level) {
+    // We don't use parsing methods because we need to discard constructed tags
+    const unsigned char *buf = tlv->value;
+    size_t left = tlv->len;
+
+    while (left) {
+        struct tlv sub_tlv;
+        //const struct piv_tag *sub_tag;
+
+        if (!tlv_parse_tl(&buf, &left, &sub_tlv)) {
+            PrintAndLogEx(INFO, "%*sInvalid Tag-Len", (level * 4), " ");
+            continue;
+        }
+        sub_tlv.value = buf;
+        piv_tag_dump(&sub_tlv, level + 1);
+        buf += sub_tlv.len;
+        left -= sub_tlv.len;
+    }
+
+}
+
+static bool piv_tag_dump(const struct tlv *tlv, int level) {
+    if (tlv == NULL) {
+        PrintAndLogEx(FAILED, "NULL");
+        return false;
+    }
+
+    const struct piv_tag *tag = piv_get_tag(tlv);
+
+    PrintAndLogEx(INFO, "%*s--%2x[%02zx] '%s':" NOLF, (level * 4), " ", tlv->tag, tlv->len, tag->name);
+
+    switch (tag->type) {
+        case PIV_TAG_GENERIC:
+            PrintAndLogEx(NORMAL, "");
+            break;
+        case PIV_TAG_HEXDUMP:
+            PrintAndLogEx(NORMAL, "");
+            print_buffer(tlv->value, tlv->len, level + 1);
+            break;
+        case PIV_TAG_STRING:
+            PrintAndLogEx(NORMAL, " '" _YELLOW_("%s")"'", sprint_hex_inrow(tlv->value, tlv->len));
+            break;
+        case PIV_TAG_NUMERIC:
+            PrintAndLogEx(NORMAL, " " _YELLOW_("%lu"), piv_value_numeric(tlv, 0, tlv->len * 2));
+            break;
+        case PIV_TAG_YYYYMMDD:
+            piv_tag_dump_yyyymmdd(tlv, tag, level);
+            break;
+        case PIV_TAG_ENUM:
+            piv_tag_dump_enum(tlv, tag, level + 1);
+            break;
+        case PIV_TAG_TLV:
+            PrintAndLogEx(NORMAL, "");
+            piv_tag_dump_tlv(tlv, tag, level);
+            break;
+        case PIV_TAG_PRINTSTR:
+            PrintAndLogEx(NORMAL, " '" NOLF);
+            for (size_t i = 0; i < tlv->len; i++) {
+                PrintAndLogEx(NORMAL, _YELLOW_("%c") NOLF, tlv->value[i]);
+            }
+            PrintAndLogEx(NORMAL, "'");
+            break;
+            break;
+        case PIV_TAG_GUID:
+            if (tlv->len != 16) {
+                PrintAndLogEx(NORMAL, _RED_("<Invalid>"));
+            } else {
+                struct guid guid = {0};
+                parse_guid(tlv->value, &guid);
+                PrintAndLogEx(NORMAL, " " _YELLOW_("{%08x-%04x-%04x-") NOLF, guid.part1, guid.part2, guid.part3);
+                for (size_t i = 0; i < 8; i++) {
+                    PrintAndLogEx(NORMAL, _YELLOW_("%02x") NOLF, guid.data[i]);
+                }
+                PrintAndLogEx(NORMAL, _YELLOW_("}"));
+            }
+            break;
+        case PIV_TAG_CERT:
+            PrintAndLogEx(NORMAL, _RED_("<TODO: print cert with mbedtls>"));
+            print_buffer(tlv->value, tlv->len, level + 1);
+            break;
+    };
+
+    return true;
+}
+
 static void piv_print_cb(void *data, const struct tlv *tlv, int level, bool is_leaf) {
-    emv_tag_dump(tlv, level); // TODO: replace it with PIV function.
+    piv_tag_dump(tlv, level);
     if (is_leaf) {
         print_buffer(tlv->value, tlv->len, level);
     }
@@ -323,10 +630,10 @@ static int PivAuthenticateSign(Iso7816CommandChannel channel, uint8_t alg_id, ui
         return PM3_EINVARG;
     }
     uint8_t apdu_buf[APDU_RES_LEN] = {0x7c, nonce_len + 4, 0x82, 0x00, 0x81, nonce_len};
-    memcpy(&apdu_buf[5], nonce, nonce_len);
+    memcpy(&apdu_buf[6], nonce, nonce_len);
     sAPDU_t apdu = {
         0x00, 0x87, alg_id, key_id,
-        0, apdu_buf
+        6 + nonce_len, apdu_buf
     };
 
     uint16_t sw = 0;
@@ -686,6 +993,7 @@ static int CmdPIVScan(const char *Cmd) {
 
     for (int i = 0; PIV_CONTAINERS[i].len != 0; i++) {
         PivGetDataByCidAndPrint(channel, &(PIV_CONTAINERS[i]), decodeTLV, false);
+        PrintAndLogEx(NORMAL, "");
     }
     if (leaveSignalON == false) {
         DropFieldEx(channel);
