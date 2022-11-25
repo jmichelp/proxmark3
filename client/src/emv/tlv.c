@@ -255,7 +255,6 @@ bool tlvdb_parse_root(struct tlvdb_root *root) {
             return true;
         }
     }
-    tlvdb_free(&root->db);
     return false;
 }
 
@@ -276,13 +275,11 @@ bool tlvdb_parse_root_multi(struct tlvdb_root *root) {
                 tlvdb_add(&root->db, db);
             } else {
                 free(db);
-                tlvdb_free(&root->db);
                 return false;
             }
         }
         return true;
     }
-    tlvdb_free(&root->db);
     return false;
 }
 
@@ -330,8 +327,14 @@ void tlvdb_root_free(struct tlvdb_root *root) {
     if (root == NULL) {
         return;
     }
-    tlvdb_free(root->db.children);
-    tlvdb_free(root->db.next);
+    if (root->db.children) {
+        tlvdb_free(root->db.children);
+        root->db.children = NULL;
+    }
+    if (root->db.next) {
+        tlvdb_free(root->db.next);
+        root->db.next = NULL;
+    }
     free(root);
 }
 
