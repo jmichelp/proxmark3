@@ -471,8 +471,8 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
     };
 
     // Answer can be chained. Let's use a dynamically allocated buffer.
-    struct tlvdb_root *root = calloc(1, sizeof(*root) + APDU_RES_LEN);
     size_t capacity = APDU_RES_LEN;
+    struct tlvdb_root *root = calloc(1, sizeof(*root) + capacity);
 
     if (root == NULL) {
         return PM3_EMALLOC;
@@ -492,8 +492,8 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
         if (((*sw) & 0xff00) == 0x6100) {
             // More data
             more_data = (*sw) & 0xff;
-            if (more_data == 0x00) {
-                more_data = 0x100;
+            if (more_data == 0x00 || more_data > MAX_APDU_SIZE) {
+                more_data = MAX_APDU_SIZE;
             }
             apdu.CLA = 0x00;
             apdu.INS = 0xC0;
