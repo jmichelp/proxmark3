@@ -349,7 +349,9 @@ static int smart_responseEx(uint8_t *out, int maxoutlen, bool verbose) {
             goto out;
         }
 
-        if (verbose) PrintAndLogEx(INFO, "Requesting " _YELLOW_("0x%02X") " bytes response", len);
+        if (verbose) {
+            PrintAndLogEx(INFO, "Requesting " _YELLOW_("0x%02X") " bytes response", len);
+        }
 
         uint8_t cmd_getresp[] = {0x00, ISO7816_GET_RESPONSE, 0x00, 0x00, len};
         smart_card_raw_t *payload = calloc(1, sizeof(smart_card_raw_t) + sizeof(cmd_getresp));
