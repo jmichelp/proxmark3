@@ -28,6 +28,7 @@
 #include "proxmark3.h"
 #include "cmdhf14a.h"
 #include "fileutils.h"
+#include "crypto/asn1utils.h"
 
 static int CmdHelp(const char *Cmd);
 
@@ -109,6 +110,7 @@ enum piv_tag_t {
     PIV_TAG_TLV,
     PIV_TAG_GUID,
     PIV_TAG_CERT,
+    PIV_TAG_FASCN,
 };
 
 struct piv_tag {
@@ -157,7 +159,7 @@ static const struct piv_tag piv_tags[] = {
     { 0x07,     "Organization Affiliation (Line 1)",                           PIV_TAG_PRINTSTR, NULL },
     { 0x08,     "Organization Affiliation (Line 2)",                           PIV_TAG_PRINTSTR, NULL },
 
-    { 0x30,     "FASC-N",                                                      PIV_TAG_STRING,   NULL },
+    { 0x30,     "FASC-N",                                                      PIV_TAG_FASCN,    NULL },
     { 0x32,     "Organizational Identifier [deprecated]",                      PIV_TAG_HEXDUMP,  NULL },
     { 0x33,     "DUNS [deprecated]",                                           PIV_TAG_HEXDUMP,  NULL },
     { 0x34,     "GUID",                                                        PIV_TAG_GUID,     NULL },
@@ -353,6 +355,71 @@ static void piv_tag_dump_tlv(const struct tlv *tlv, const struct piv_tag *tag, i
 
 }
 
+static void piv_print_cert(const uint8_t *buf, const size_t len, int level) {
+    char prefix[256] = {0};
+    snprintf(prefix, sizeof(prefix), "%*s", 4 * level, "");
+    // TODO: when mbedTLS has a new release with the PCKS7 parser, we can replace the generic ASN.1 print
+    // The pull request has been merged end of Nov 2022.
+    asn1_print((uint8_t *) buf, len, prefix);
+}
+
+static void piv_print_fascn(const uint8_t *buf, const size_t len, int level) {
+    const char *encoded[32] = {
+        _RED_("?"),       // 0b00000
+        "0",              // 0b00001
+        "8",              // 0b00010
+        _RED_("?"),       // 0b00011
+        "4",              // 0b00100
+        _RED_("?"),       // 0b00101
+        _RED_("?"),       // 0b00110
+        _RED_("?"),       // 0b00111
+        "2",              // 0b01000
+        _RED_("?"),       // 0b01001
+        _RED_("?"),       // 0b01010
+        _RED_("?"),       // 0b01011
+        _RED_("?"),       // 0b01100
+        "6",              // 0b01101
+        _RED_("?"),       // 0b01110
+        _RED_("?"),       // 0b01111
+        "1",              // 0b10000
+        _RED_("?"),       // 0b10001
+        _RED_("?"),       // 0b10010
+        "9",              // 0b10011
+        _RED_("?"),       // 0b10100
+        "5",              // 0b10101
+        _GREEN_(" FS "),  // 0b10110
+        _RED_("?"),       // 0b10111
+        _RED_("?"),       // 0b11000
+        "3",              // 0b11001
+        _YELLOW_("SS "),  // 0b11010
+        _RED_("?"),       // 0b11011
+        "7",              // 0b11100
+        _RED_("?"),       // 0b11101
+        _RED_("?"),       // 0b11110
+        _YELLOW_(" ES"),  // 0b11111
+    };
+    const uint8_t cycle[8] = {5, 2, 7, 4, 1, 6, 3, 8};
+
+    //PrintAndLogEx(NORMAL, "");
+    PrintAndLogEx(NORMAL, "%*s" NOLF, 4 * level);
+    for (int i = 0; i < 39; i++) {
+        uint8_t tmp = buf[(5 * i) >> 3];
+        uint8_t rot = cycle[i & 7];
+        // rotate left to get the bits in place
+        tmp = (tmp << rot) | (tmp >> (8 - rot));
+        // append bits from next byte if needed
+        if (rot < 5) {
+            uint8_t tmp2 = buf[(5 * (i + 1)) >> 3];
+            tmp2 = (tmp2 << rot) | (tmp2 >> (8 - rot));
+            tmp &= 0x1f << rot;
+            tmp |= tmp2 & ((1 << rot) - 1);
+        }
+        PrintAndLogEx(NORMAL, "%s" NOLF, encoded[tmp & 0x1f]);
+    }
+    uint8_t lrc = buf[24] & 0x1f;
+    PrintAndLogEx(NORMAL, " LRC=[" _YELLOW_("%02x") "]", lrc);
+}
+
 static bool piv_tag_dump(const struct tlv *tlv, int level) {
     if (tlv == NULL) {
         PrintAndLogEx(FAILED, "NULL");
@@ -394,7 +461,6 @@ static bool piv_tag_dump(const struct tlv *tlv, int level) {
             }
             PrintAndLogEx(NORMAL, "'");
             break;
-            break;
         case PIV_TAG_GUID:
             if (tlv->len != 16) {
                 PrintAndLogEx(NORMAL, _RED_("<Invalid>"));
@@ -409,8 +475,13 @@ static bool piv_tag_dump(const struct tlv *tlv, int level) {
             }
             break;
         case PIV_TAG_CERT:
-            PrintAndLogEx(NORMAL, _RED_("<TODO: print cert with mbedtls>"));
-            print_buffer(tlv->value, tlv->len, level + 1);
+            piv_print_cert(tlv->value, tlv->len, level + 2);
+            break;
+        case PIV_TAG_FASCN:
+            PrintAndLogEx(NORMAL, " '" _YELLOW_("%s")"'", sprint_hex_inrow(tlv->value, tlv->len));
+            if (tlv->len == 25) {
+                piv_print_fascn(tlv->value, tlv->len, level + 2);
+            }
             break;
     };
 
