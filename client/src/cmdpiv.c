@@ -471,7 +471,7 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
     };
 
     // Answer can be chained. Let's use a dynamically allocated buffer.
-    size_t capacity = APDU_RES_LEN;
+    size_t capacity = PM3_CMD_DATA_SIZE;
     struct tlvdb_root *root = calloc(1, sizeof(*root) + capacity);
 
     if (root == NULL) {
@@ -482,7 +482,7 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
     size_t more_data = 0;
     do {
         size_t received = 0;
-        int res = Iso7816ExchangeEx(channel, false, true, apdu, (more_data != 0), more_data, &(root->buf[root->len]), APDU_RES_LEN, &received, sw);
+        int res = Iso7816ExchangeEx(channel, false, true, apdu, (more_data != 0), more_data, &(root->buf[root->len]), PM3_CMD_DATA_SIZE, &received, sw);
         if (res != PM3_SUCCESS) {
             PrintAndLogEx(FAILED, "Sending APDU failed with code %d", res);
             free(root);
@@ -501,7 +501,7 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
             apdu.P2 = 0x00;
             apdu.Lc = 0;
             apdu.data = NULL;
-            capacity += APDU_RES_LEN;
+            capacity += PM3_CMD_DATA_SIZE;
             struct tlvdb_root *new_root = realloc(root, sizeof(*root) + capacity);
             if (new_root == NULL) {
                 PrintAndLogEx(FAILED, "Running out of memory while re-allocating buffer");
