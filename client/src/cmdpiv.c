@@ -190,8 +190,8 @@ static const struct piv_tag piv_tags[] = {
     { 0xac,     "Cryptographic algorithms supported",                          PIV_TAG_GENERIC,  NULL },
 
     { 0xb4,     "Security Object Buffer (deprecated)",                         PIV_TAG_GENERIC,  NULL },
-    { 0xba,     "Mapping of DG to Container ID",                               PIV_TAG_GENERIC,  NULL },
-    { 0xbb,     "Security Object",                                             PIV_TAG_GENERIC,  NULL },
+    { 0xba,     "Mapping of DG to Container ID",                               PIV_TAG_HEXDUMP,  NULL },
+    { 0xbb,     "Security Object",                                             PIV_TAG_CERT,     NULL },
     { 0xbc,     "Fingerprint I & II or Image for Visual Verification",         PIV_TAG_GENERIC,  NULL },
 
     { 0xc1,     "keysWithOnCardCerts",                                         PIV_TAG_NUMERIC,  NULL },
@@ -357,7 +357,8 @@ static void piv_tag_dump_tlv(const struct tlv *tlv, const struct piv_tag *tag, i
 
 static void piv_print_cert(const uint8_t *buf, const size_t len, int level) {
     char prefix[256] = {0};
-    snprintf(prefix, sizeof(prefix), "%*s", 4 * level, "");
+    PrintAndLogEx(NORMAL, "");
+    snprintf(prefix, sizeof(prefix), "%*s", 4 * level, " ");
     // TODO: when mbedTLS has a new release with the PCKS7 parser, we can replace the generic ASN.1 print
     // The pull request has been merged end of Nov 2022.
     asn1_print((uint8_t *) buf, len, prefix);
@@ -401,7 +402,7 @@ static void piv_print_fascn(const uint8_t *buf, const size_t len, int level) {
     const uint8_t cycle[8] = {5, 2, 7, 4, 1, 6, 3, 8};
 
     //PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(NORMAL, "%*s" NOLF, 4 * level);
+    PrintAndLogEx(INFO, "%*s" NOLF, 4 * level);
     for (int i = 0; i < 39; i++) {
         uint8_t tmp = buf[(5 * i) >> 3];
         uint8_t rot = cycle[i & 7];
