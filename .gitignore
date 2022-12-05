@@ -54,6 +54,8 @@ cov-int/
 
 !client/resources/hardnested/*.bin
 !client/resources/hardnested_tables/*.z
+!client/resources/sim011.bin
+!client/resources/sim012.bin
 client/src/ui/ui_image.h
 client/src/ui/ui_overlays.h
 client/deps/reveng/bmptst
