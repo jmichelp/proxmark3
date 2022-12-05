@@ -144,8 +144,8 @@ static const struct piv_tag_enum PIV_CRYPTO_ALG[] = {
 };
 
 static const struct piv_tag_enum PIV_CERT_INFO[] = {
-    0x00, "Uncompressed",
-    0x01, "GZIP Compressed",
+    {0x00, "Uncompressed"},
+    {0x01, "GZIP Compressed"},
     PIV_ENUM_FINISH,
 };
 
