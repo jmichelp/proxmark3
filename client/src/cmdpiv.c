@@ -553,7 +553,7 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
     size_t more_data = 0;
     do {
         size_t received = 0;
-        int res = Iso7816ExchangeEx(channel, false, true, apdu, (more_data != 0), more_data, &(root->buf[root->len]), PM3_CMD_DATA_SIZE, &received, sw);
+        int res = Iso7816ExchangeEx(channel, false, true, apdu, (more_data != 0), more_data, &(root->buf[root->len]), capacity - root->len, &received, sw);
         if (res != PM3_SUCCESS) {
             PrintAndLogEx(FAILED, "Sending APDU failed with code %d", res);
             free(root);
@@ -572,14 +572,17 @@ static int PivGetData(Iso7816CommandChannel channel, const uint8_t tag[], size_t
             apdu.P2 = 0x00;
             apdu.Lc = 0;
             apdu.data = NULL;
-            capacity += PM3_CMD_DATA_SIZE;
-            struct tlvdb_root *new_root = realloc(root, sizeof(*root) + capacity);
-            if (new_root == NULL) {
-                PrintAndLogEx(FAILED, "Running out of memory while re-allocating buffer");
-                free(root);
-                return PM3_EMALLOC;
+            if ((capacity - root->len) < PM3_CMD_DATA_SIZE) {
+                PrintAndLogEx(DEBUG, "Adding more capacity to buffer...");
+                capacity += PM3_CMD_DATA_SIZE;
+                struct tlvdb_root *new_root = realloc(root, sizeof(*root) + capacity);
+                if (new_root == NULL) {
+                    PrintAndLogEx(FAILED, "Running out of memory while re-allocating buffer");
+                    free(root);
+                    return PM3_EMALLOC;
+                }
+                root = new_root;
             }
-            root = new_root;
         }
         if ((*sw) == APDU_RES_SUCCESS) {
             more_data = 0;
