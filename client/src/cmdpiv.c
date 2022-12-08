@@ -402,7 +402,7 @@ static void piv_print_fascn(const uint8_t *buf, const size_t len, int level) {
     const uint8_t cycle[8] = {5, 2, 7, 4, 1, 6, 3, 8};
 
     //PrintAndLogEx(NORMAL, "");
-    PrintAndLogEx(INFO, "%*s" NOLF, 4 * level);
+    PrintAndLogEx(INFO, "%*s" NOLF, 4 * level, " ");
     for (int i = 0; i < 39; i++) {
         uint8_t tmp = buf[(5 * i) >> 3];
         uint8_t rot = cycle[i & 7];
