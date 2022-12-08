@@ -165,6 +165,7 @@ static const struct piv_tag piv_tags[] = {
     { 0x34,     "GUID",                                                        PIV_TAG_GUID,     NULL },
     { 0x35,     "Expiry Date",                                                 PIV_TAG_YYYYMMDD, NULL },
     { 0x36,     "Cardholder UUID",                                             PIV_TAG_GUID,     NULL },
+    { 0x3d,     "Authentication Key Map",                                      PIV_TAG_HEXDUMP,  NULL },
     { 0x3e,     "Issuer Asymmetric Signature",                                 PIV_TAG_CERT,     NULL },
 
     { 0x4f,     "Application Identifier (AID)",                                PIV_TAG_STRING,   NULL },
