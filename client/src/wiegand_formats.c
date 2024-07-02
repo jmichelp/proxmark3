@@ -154,7 +154,7 @@ static bool Pack_indasc27(wiegand_card_t *card, wiegand_message_t *packed, bool 
     if (card->OEM > 0) return false; // Not used in this format
 
     packed->Length = 27;
-    set_nonlinear_field(packed, card->FacilityCode, 11, (uint8_t[]) {9, 4, 6, 5, 0, 7, 19, 8, 10, 16, 24, 12, 22});
+    set_nonlinear_field(packed, card->FacilityCode, 13, (uint8_t[]) {9, 4, 6, 5, 0, 7, 19, 8, 10, 16, 24, 12, 22});
     set_nonlinear_field(packed, card->CardNumber, 14, (uint8_t[]) {26, 1, 3, 15, 14, 17, 20, 13, 25, 2, 18, 21, 11, 23});
     if (preamble)
         return add_HID_header(packed);
@@ -166,7 +166,7 @@ static bool Unpack_indasc27(wiegand_message_t *packed, wiegand_card_t *card) {
 
     if (packed->Length != 27) return false; // Wrong length? Stop here.
 
-    card->FacilityCode = get_nonlinear_field(packed, 11, (uint8_t[]) {9, 4, 6, 5, 0, 7, 19, 8, 10, 16, 24, 12, 22});
+    card->FacilityCode = get_nonlinear_field(packed, 13, (uint8_t[]) {9, 4, 6, 5, 0, 7, 19, 8, 10, 16, 24, 12, 22});
     card->CardNumber = get_nonlinear_field(packed, 14, (uint8_t[]) {26, 1, 3, 15, 14, 17, 20, 13, 25, 2, 18, 21, 11, 23});
     return true;
 }
